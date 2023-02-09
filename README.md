@@ -1,126 +1,128 @@
-# jle-sam-test
+# Travailler avec AWS en local
 
-This project contains source code and supporting files for a serverless application that you can deploy with the SAM CLI. It includes the following files and folders.
+## SAM
 
-- HelloWorldFunction/src/main - Code for the application's Lambda function.
-- events - Invocation events that you can use to invoke the function.
-- HelloWorldFunction/src/test - Unit tests for the application code. 
-- template.yaml - A template that defines the application's AWS resources.
+### Présentation
 
-The application uses several AWS resources, including Lambda functions and an API Gateway API. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
+- Acronyme
+- SAM peut créer un conteneur Docker pour héberger la lambda.
 
-If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
-The AWS Toolkit is an open source plug-in for popular IDEs that uses the SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds a simplified step-through debugging experience for Lambda function code. See the following links to get started.
+### Initialisation
 
-* [CLion](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [GoLand](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [IntelliJ](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [WebStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [Rider](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PhpStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PyCharm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [RubyMine](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [DataGrip](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [VS Code](https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/welcome.html)
-* [Visual Studio](https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/welcome.html)
+- Les modèles d'initialisation disponibles sont fonction du langage
+- On peut aussi simplement déposer un `template.yml` dans le dossier racine du projet
 
-## Deploy the sample application
+### Template
 
-The Serverless Application Model Command Line Interface (SAM CLI) is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
+- `CodeUri`: emplacement du `build.gradle`
+- `Handler`: `package.class::method`
 
-To use the SAM CLI, you need the following tools.
+### Cycle de développement
 
-* SAM CLI - [Install the SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
-* Java11 - [Install the Java 11](https://docs.aws.amazon.com/corretto/latest/corretto-11-ug/downloads-list.html)
-* Docker - [Install Docker community edition](https://hub.docker.com/search/?type=edition&offering=community)
+- `sam validate`: validation du `template.yml`
+- `sam build`: création du `.aws-sam` qui contient le nécessaire pour un déploiement,
+- `sam local invoke HelloWorldFunction --event events/some-event.json`
 
-To build and deploy your application for the first time, run the following in your shell:
+Le refresh automatique ne fonctionne que pour les [langages interprétés](https://github.com/aws/aws-sam-cli/issues/921),
+donc il faut relancer un build à chaque fois que l'on modifie le template ou le code de la lambda
 
-```bash
-sam build
-sam deploy --guided
+### Intégration dans l'IDE
+
+Deux manières de faire:
+
+- depuis le template
+- depuis le handler
+
+Dans les deux cas bien vérifier la configuration d'exécution si on a l'impression que ça ne fonctionne pas bien...
+
+### Debugging distant
+
+Utiliser l'option `--debug-port 5005`, puis s'attacher au port exposé par le debugger
+
+## Développement sur une vraie lambda: `ManageSubscriptionState`
+
+- Pour ne pas avoir la plupart des fichiers qui concernent SAM au même endroit, j'ai créé à la racine
+  du projet
+  - un dossier `local` qui contient tous les fichiers nécessaires
+  - un fichier de configuration `samconfig.toml` qui permet aux lignes de commande `sam build` et `sam local invoke` de
+    continuer à fonctionner sans avoir à saisir trop d'arguments dans la CLI
+- Utilisation de profils Spring pour activer des bouchons sur Athena, DynamoDB, SQS, ...
+- Utilisation d'outils qui simulent en local certains services:
+  - DynamoDB: utiliser l'image fournie
+    par [Amazon](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html)
+  - Autres services: pour l'instant pas de solution fournie par Amazon. L'outil le plus avancé semble être
+    [LocalStack](https://localstack.cloud/), mais il a plusieurs inconvénients
+    - Il est open source pour certains services seulement (Athena par exemple n'est inclus que dans la version pro)
+    - Ça fait un outil de plus à maitriser
+    - Il change encore souvent et contient pas mal de bugs
+
+Pour passer des variables d'environnement à la lambda, il faut
+
+- qu'elles soient définies dans le `template.yaml`
+- utiliser l'argument `--env-vars myvars.json`
+
+Par exemple:
+
+```shell
+sam local invoke ManageSubscriptionState --event local/events/manage-subscription-state-trigger.json --env-vars local/environments/env.json
 ```
 
-The first command will build the source of your application. The second command will package and deploy your application to AWS, with a series of prompts:
+## Utilisation de `dynamodb-local`
 
-* **Stack Name**: The name of the stack to deploy to CloudFormation. This should be unique to your account and region, and a good starting point would be something matching your project name.
-* **AWS Region**: The AWS region you want to deploy your app to.
-* **Confirm changes before deploy**: If set to yes, any change sets will be shown to you before execution for manual review. If set to no, the AWS SAM CLI will automatically deploy application changes.
-* **Allow SAM CLI IAM role creation**: Many AWS SAM templates, including this example, create AWS IAM roles required for the AWS Lambda function(s) included to access AWS services. By default, these are scoped down to minimum required permissions. To deploy an AWS CloudFormation stack which creates or modifies IAM roles, the `CAPABILITY_IAM` value for `capabilities` must be provided. If permission isn't provided through this prompt, to deploy this example you must explicitly pass `--capabilities CAPABILITY_IAM` to the `sam deploy` command.
-* **Save arguments to samconfig.toml**: If set to yes, your choices will be saved to a configuration file inside the project, so that in the future you can just re-run `sam deploy` without parameters to deploy changes to your application.
+On veut que le conteneur dynamodb et le conteneur créé par SAM soient dans le même réseau docker pour pouvoir
+communiquer sans problème.
 
-You can find your API Gateway Endpoint URL in the output values displayed after deployment.
+### Créer un réseau docker
 
-## Use the SAM CLI to build and test locally
-
-Build your application with the `sam build` command.
-
-```bash
-jle-sam-test$ sam build
+```shell
+docker network create sam-local
 ```
 
-The SAM CLI installs dependencies defined in `HelloWorldFunction/build.gradle`, creates a deployment package, and saves it in the `.aws-sam/build` folder.
+### Créer le conteneur dynamodb
 
-Test a single function by invoking it directly with a test event. An event is a JSON document that represents the input that the function receives from the event source. Test events are included in the `events` folder in this project.
-
-Run functions locally and invoke them with the `sam local invoke` command.
-
-```bash
-jle-sam-test$ sam local invoke HelloWorldFunction --event events/event.json
+```shell
+docker run -p 8000:8000 --name dynamodb-local --network=sam-local amazon/dynamodb-local
 ```
 
-The SAM CLI can also emulate your application's API. Use the `sam local start-api` to run the API locally on port 3000.
+### Créer une table dans dynamodb
 
-```bash
-jle-sam-test$ sam local start-api
-jle-sam-test$ curl http://localhost:3000/
+```shell
+aws dynamodb create-table --table-name feelings_table --attribute-definitions AttributeName=feelingId,AttributeType=S --key-schema AttributeName=feelingId,KeyType=HASH --billing-mode PAY_PER_REQUEST --endpoint-url http://localhost:8000
 ```
 
-The SAM CLI reads the application template to determine the API's routes and the functions that they invoke. The `Events` property on each function's definition includes the route and method for each path.
+### Lister les tables
 
-```yaml
-      Events:
-        HelloWorld:
-          Type: Api
-          Properties:
-            Path: /hello
-            Method: get
+```shell
+aws dynamodb list-tables --endpoint-url http://localhost:8000
 ```
 
-## Add a resource to your application
-The application template uses AWS Serverless Application Model (AWS SAM) to define application resources. AWS SAM is an extension of AWS CloudFormation with a simpler syntax for configuring common serverless application resources such as functions, triggers, and APIs. For resources not included in [the SAM specification](https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md), you can use standard [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html) resource types.
+### Scanner une table
 
-## Fetch, tail, and filter Lambda function logs
-
-To simplify troubleshooting, SAM CLI has a command called `sam logs`. `sam logs` lets you fetch logs generated by your deployed Lambda function from the command line. In addition to printing the logs on the terminal, this command has several nifty features to help you quickly find the bug.
-
-`NOTE`: This command works for all AWS Lambda functions; not just the ones you deploy using SAM.
-
-```bash
-jle-sam-test$ sam logs -n HelloWorldFunction --stack-name jle-sam-test --tail
+```shell
+aws dynamodb scan --table-name feelings_table --endpoint-url http://localhost:8000
 ```
 
-You can find more information and examples about filtering Lambda function logs in the [SAM CLI Documentation](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-logging.html).
+Questions:
 
-## Unit tests
+- On voit l'image avec un `docker images` mais pas le conteneur créé par SAM en faisant un `docker container ls -a`
+- Si message du genre `No response from invoke container for ManageSubscriptionState`, utiliser `Timeout`
+- Changement du port du serveur Tomcat de Spring, sinon erreur port déjà utilisé en debug. Le lancement du debug rentre
+  en conflit avec le serveur Tomcat ?
+- Pas trouvé comment désactiver l'utilisation du parameter store
 
-Tests are defined in the `HelloWorldFunction/src/test` folder in this project.
+A creuser:
 
-```bash
-jle-sam-test$ cd HelloWorldFunction
-HelloWorldFunction$ gradle test
-```
-
-## Cleanup
-
-To delete the sample application that you created, use the AWS CLI. Assuming you used your project name for the stack name, you can run the following:
-
-```bash
-aws cloudformation delete-stack --stack-name jle-sam-test
-```
+- Initialisation
+  avec [CDK](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-cdk-getting-started.html)
+  permettrait de déclarer l'infra avec du code plutôt que du YAML
+- Utilisation
+  de [TF](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/terraform-support.html)
+- [AWS Toolkit for Jetbrains](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
 
 ## Resources
 
-See the [AWS SAM developer guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html) for an introduction to SAM specification, the SAM CLI, and serverless application concepts.
-
-Next, you can use AWS Serverless Application Repository to deploy ready to use Apps that go beyond hello world samples and learn how authors developed their applications: [AWS Serverless Application Repository main page](https://aws.amazon.com/serverless/serverlessrepo/)
+- [SAM reference documentation](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html)
+- [Repository des templates SAM](https://github.com/aws/aws-sam-cli-app-templates)
+- [A Java lambda project](https://github.com/aws-samples/aws-sam-java-rest)
+- [DynamoDb local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html)
+- [AWS SDK for Java 2.x](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/home.html)
